@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>교사용 자리 배정 페이지</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page teacher-page">
+    <header class="page-header">
+      <h1>교사용 자리 배정 관리</h1>
+      <p>학생 정보 저장 → 시작 → 실시간 확인 → 완료</p>
+    </header>
+
+    <main class="teacher-layout">
+      <section class="panel">
+        <h2>학생 정보 입력</h2>
+        <p class="desc">
+          학생 화면에는 이름만 보이고, 학번은 본인 확인용으로만 사용됩니다.
+        </p>
+
+        <div class="form-row">
+          <input type="text" id="studentName" placeholder="이름">
+          <input type="password" id="studentNumber" placeholder="학번" inputmode="numeric" autocomplete="off">
+          <button id="addStudentBtn" class="primary-btn">추가</button>
+        </div>
+
+        <div class="sub-actions">
+          <button id="saveStudentsBtn" class="primary-btn">학생 정보 저장</button>
+          <button id="clearDraftBtn" class="secondary-btn">입력 목록 비우기</button>
+        </div>
+
+        <div class="list-box">
+          <h3>저장 예정 학생 목록</h3>
+          <ul id="draftStudentList" class="student-list"></ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>배정 제어</h2>
+        <div class="status-box">
+          <span class="label">현재 상태</span>
+          <span id="teacherStatusText" class="status waiting">대기 중</span>
+        </div>
+
+        <div class="control-buttons">
+          <button id="startBtn" class="primary-btn">시작</button>
+          <button id="finishBtn" class="danger-btn">완료</button>
+          <button id="resetBtn" class="secondary-btn">초기화</button>
+        </div>
+
+        <div class="notice-box">
+          <p>초기화는 현재 좌석 배정을 모두 비우고 다시 대기 상태로 돌립니다.</p>
+        </div>
+      </section>
+
+      <section class="panel seat-panel">
+        <div class="panel-head">
+          <h2>실시간 좌석 현황</h2>
+          <p>5열 6행</p>
+        </div>
+        <div id="teacherSeatGrid" class="seat-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2>배정 결과</h2>
+        <ul id="resultList" class="result-list"></ul>
+      </section>
+    </main>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="./teacher.js"></script>
+</body>
+</html>

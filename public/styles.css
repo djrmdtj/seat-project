@@ -1,0 +1,412 @@
+* {
+    box-sizing: border-box;
+  }
+  
+  body {
+    margin: 0;
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: #f5f7fb;
+    color: #222;
+  }
+  
+  .page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px 40px;
+  }
+  
+  .page-header {
+    margin-bottom: 20px;
+  }
+  
+  .page-header h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+  }
+  
+  .page-header p {
+    margin: 0;
+    color: #666;
+  }
+  
+  .teacher-layout,
+  .student-layout {
+    display: grid;
+    gap: 16px;
+  }
+  
+  .teacher-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .student-layout {
+    grid-template-columns: 360px 1fr;
+  }
+  
+  .panel {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  }
+  
+  .panel h2 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 22px;
+  }
+  
+  .panel h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 18px;
+  }
+  
+  .desc {
+    margin-top: 0;
+    color: #666;
+    font-size: 14px;
+  }
+  
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    margin-bottom: 12px;
+    align-items: stretch;
+  }
+  
+  .form-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  
+  input,
+  select,
+  button {
+    font: inherit;
+  }
+  
+  input,
+  select {
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 12px;
+    border: 1px solid #d7dbe3;
+    border-radius: 10px;
+    background: #fff;
+  }
+  
+  .form-row input {
+    width: 100%;
+  }
+
+  .teacher-page .form-row input,
+  .teacher-page .form-row button {
+    width: 100%;
+  }
+  
+  button {
+    min-height: 44px;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+  
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+  
+  .primary-btn {
+    background: #2f6df6;
+    color: #fff;
+  }
+  
+  .primary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  
+  .secondary-btn {
+    background: #ebeff5;
+    color: #222;
+  }
+  
+  .danger-btn {
+    background: #df4b4b;
+    color: #fff;
+  }
+  
+  .sub-actions,
+  .control-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  
+  .status-box,
+  .current-user-box,
+  .my-seat-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #f7f9fc;
+    margin-bottom: 12px;
+  }
+  
+  .label {
+    color: #666;
+    font-size: 14px;
+  }
+  
+  .status {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  
+  .status.waiting {
+    background: #e8edf8;
+    color: #46639d;
+  }
+  
+  .status.open {
+    background: #e5f7ea;
+    color: #19763b;
+  }
+  
+  .status.closed {
+    background: #fbe9e9;
+    color: #a52d2d;
+  }
+  
+  .notice-box {
+    background: #f8fafc;
+    border: 1px solid #e5e9f1;
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: #555;
+    font-size: 14px;
+  }
+  
+  .list-box {
+    margin-top: 16px;
+  }
+  
+  .student-list,
+  .result-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .student-item,
+  .result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid #edf1f6;
+    padding: 10px 0;
+  }
+  
+  .student-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .student-meta small {
+    color: #777;
+  }
+  
+  .remove-btn {
+    background: #f0f2f7;
+    color: #333;
+    padding: 8px 12px;
+  }
+  
+  .seat-panel {
+    grid-column: 1 / -1;
+    overflow-x: auto;
+  }
+  
+  .student-layout .seat-panel {
+    grid-column: auto;
+  }
+  
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  
+  .panel-head p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+  }
+  
+  .seat-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(92px, 1fr));
+    gap: 10px;
+    min-width: 520px;
+  }
+  
+  .seat-btn {
+    min-height: 92px;
+    border: 1px solid #d8dee8;
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    touch-action: manipulation;
+  }
+  
+  .seat-code {
+    font-size: 13px;
+    color: #667085;
+  }
+  
+  .seat-name {
+    font-weight: 700;
+    font-size: 15px;
+    color: #222;
+    word-break: keep-all;
+  }
+  
+  .seat-btn.available {
+    background: #ffffff;
+  }
+  
+  .seat-btn.available:hover:not(:disabled) {
+    border-color: #2f6df6;
+    transform: translateY(-1px);
+  }
+  
+  .seat-btn.taken {
+    background: #eef2f7;
+    color: #222;
+  }
+  
+  .seat-btn.mine {
+    background: #eaf3ff;
+    border-color: #2f6df6;
+  }
+  
+  .seat-btn.locked {
+    background: #f3f5f8;
+  }
+  
+  .empty-text {
+    color: #999;
+    font-size: 13px;
+  }
+
+  .notice-box {
+    margin-top: 12px;
+  }
+
+  .current-user-box,
+  .my-seat-box {
+    margin-top: 12px;
+  }
+  
+  @media (max-width: 960px) {
+    .teacher-layout,
+    .student-layout {
+      grid-template-columns: 1fr;
+    }
+  
+    .student-layout .seat-panel {
+      grid-column: 1 / -1;
+    }
+  }
+  
+  @media (max-width: 640px) {
+    .page {
+      padding: 16px 12px 28px;
+    }
+  
+    .page-header h1 {
+      font-size: 24px;
+      line-height: 1.3;
+    }
+  
+    .page-header p {
+      font-size: 14px;
+    }
+  
+    .panel {
+      padding: 16px;
+      border-radius: 14px;
+    }
+  
+    .panel h2 {
+      font-size: 20px;
+    }
+  
+    .panel h3 {
+      font-size: 17px;
+    }
+  
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+    
+    .sub-actions,
+    .control-buttons {
+      flex-direction: column;
+    }
+    
+    .form-row > *,
+    .sub-actions > *,
+    .control-buttons > * {
+      width: 100%;
+    }
+  
+    .status-box,
+    .current-user-box,
+    .my-seat-box {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  
+    .seat-grid {
+      grid-template-columns: repeat(5, minmax(86px, 1fr));
+      min-width: 470px;
+      gap: 8px;
+    }
+  
+    .seat-btn {
+      min-height: 86px;
+      border-radius: 12px;
+      padding: 8px 6px;
+    }
+  
+    .seat-name {
+      font-size: 14px;
+    }
+  
+    .seat-code,
+    .empty-text {
+      font-size: 12px;
+    }
+  }

@@ -1,0 +1,14 @@
+{
+  "name": "seat-project",
+  "version": "1.0.0",
+  "description": "학생 선착순 자리 선택 프로젝트",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}

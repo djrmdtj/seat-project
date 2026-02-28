@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>학생용 자리 선택 페이지</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page student-page">
+    <header class="page-header">
+      <h1>학생용 자리 선택</h1>
+      <p>이름 선택 후 학번으로 본인 확인 → 시작되면 자리 선택</p>
+    </header>
+
+    <main class="student-layout">
+      <section class="panel">
+        <h2>본인 확인</h2>
+
+        <div class="form-col">
+          <label for="studentSelect">이름 선택</label>
+          <select id="studentSelect">
+            <option value="">이름을 선택하세요</option>
+          </select>
+        </div>
+
+        <div class="form-col">
+          <label for="studentNumberInput">학번 입력</label>
+          <input type="password" id="studentNumberInput" placeholder="학번 입력" inputmode="numeric" autocomplete="off">
+        </div>
+
+        <div class="sub-actions">
+          <button id="loginBtn" class="primary-btn">확인</button>
+          <button id="logoutBtn" class="secondary-btn">다시 선택</button>
+        </div>
+
+        <div class="current-user-box">
+          <span class="label">현재 선택</span>
+          <strong id="currentUserText">아직 확인되지 않음</strong>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>진행 상태</h2>
+        <div class="status-box">
+          <span class="label">현재 상태</span>
+          <span id="studentStatusText" class="status waiting">대기 중</span>
+        </div>
+
+        <div class="notice-box">
+          <p id="studentGuideText">교사가 시작 버튼을 누를 때까지 기다려 주세요.</p>
+        </div>
+
+        <div class="my-seat-box">
+          <span class="label">내 자리</span>
+          <strong id="mySeatText">아직 배정되지 않음</strong>
+        </div>
+
+        <div class="sub-actions">
+          <button id="cancelSeatBtn" class="secondary-btn">내 자리 취소</button>
+        </div>
+      </section>
+
+      <section class="panel seat-panel">
+        <div class="panel-head">
+          <h2>자리 선택</h2>
+          <p>5열 6행</p>
+        </div>
+        <div id="studentSeatGrid" class="seat-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2>최종 배정 결과</h2>
+        <ul id="studentResultList" class="result-list"></ul>
+      </section>
+    </main>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="./student.js"></script>
+</body>
+</html>
