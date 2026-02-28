@@ -1,427 +1,475 @@
+require("dotenv").config();
+
 const express = require("express");
-const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const { Server } = require("socket.io");
+const { Pool } = require("pg");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-
 const PUBLIC_DIR = path.join(__dirname, "public");
-const DATA_DIR = path.join(__dirname, "data");
-const STATE_FILE = path.join(DATA_DIR, "state.json");
 
-function createSeatMap() {
-  const seatMap = {};
+// ✅ DB 연결 (Docker Postgres / Cloud 환경 공통)
+if (!process.env.DATABASE_URL) {
+  console.error("[BOOT] DATABASE_URL is missing");
+  process.exit(1);
+}
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+  // 필요 시 SSL 옵션 추가 가능 (클라우드 DB일 때)
+  // ssl: { rejectUnauthorized: false }
+});
+
+// -----------------------
+// 좌석 생성 (5열 x 6행)
+// -----------------------
+function createSeatCodes() {
+  const codes = [];
   const columns = ["A", "B", "C", "D", "E"];
   const rows = 6;
-
-  for (let row = 1; row <= rows; row += 1) {
-    for (const col of columns) {
-      const seatCode = `${col}${row}`;
-      seatMap[seatCode] = null;
-    }
+  for (let r = 1; r <= rows; r += 1) {
+    for (const c of columns) codes.push(`${c}${r}`);
   }
-
-  return seatMap;
+  return codes;
 }
 
-function getDefaultState() {
-  return {
-    status: "waiting", // waiting | open | closed
-    students: [],
-    seats: createSeatMap()
-  };
-}
+// -----------------------
+// DB 초기화 (테이블 생성 + 기본 데이터)
+// -----------------------
+async function initDb() {
+  // 상태 테이블
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_state (
+      id INTEGER PRIMARY KEY,
+      status TEXT NOT NULL
+    );
+  `);
 
-function ensureStateFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+  // 학생 테이블
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS students (
+      name TEXT PRIMARY KEY,
+      number TEXT NOT NULL UNIQUE
+    );
+  `);
 
-  if (!fs.existsSync(STATE_FILE)) {
-    fs.writeFileSync(
-      STATE_FILE,
-      JSON.stringify(getDefaultState(), null, 2),
-      "utf-8"
+  // 좌석 테이블
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS seats (
+      seat_code TEXT PRIMARY KEY,
+      student_name TEXT NULL,
+      student_number TEXT NULL
+    );
+  `);
+
+  // app_state 기본값
+  await pool.query(`
+    INSERT INTO app_state (id, status)
+    VALUES (1, 'waiting')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  // seats 기본 30개 보장
+  const seatCodes = createSeatCodes();
+  for (const code of seatCodes) {
+    await pool.query(
+      `
+      INSERT INTO seats (seat_code, student_name, student_number)
+      VALUES ($1, NULL, NULL)
+      ON CONFLICT (seat_code) DO NOTHING;
+      `,
+      [code]
     );
   }
 }
 
-function readState() {
-  ensureStateFile();
-
-  try {
-    const raw = fs.readFileSync(STATE_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-
-    if (!parsed.status) parsed.status = "waiting";
-    if (!Array.isArray(parsed.students)) parsed.students = [];
-    if (!parsed.seats) parsed.seats = createSeatMap();
-
-    return parsed;
-  } catch (error) {
-    const fallback = getDefaultState();
-    writeState(fallback);
-    return fallback;
-  }
+// -----------------------
+// 공통 조회 함수
+// -----------------------
+async function getStatus() {
+  const r = await pool.query(`SELECT status FROM app_state WHERE id=1;`);
+  return r.rows[0]?.status || "waiting";
 }
 
-function writeState(state) {
-  ensureStateFile();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+async function setStatus(next) {
+  await pool.query(`UPDATE app_state SET status=$1 WHERE id=1;`, [next]);
+}
+
+async function getSeatsMap() {
+  const r = await pool.query(
+    `SELECT seat_code, student_name, student_number FROM seats ORDER BY seat_code ASC;`
+  );
+  const seats = {};
+  for (const row of r.rows) {
+    seats[row.seat_code] = row.student_name
+      ? { name: row.student_name, number: row.student_number }
+      : null;
+  }
+  return seats;
+}
+
+async function getStudentsAll() {
+  const r = await pool.query(`SELECT name, number FROM students ORDER BY name ASC;`);
+  return r.rows;
+}
+
+async function getStudentsPublic() {
+  const r = await pool.query(`SELECT name FROM students ORDER BY name ASC;`);
+  return r.rows;
+}
+
+async function findStudent(name, number) {
+  const r = await pool.query(
+    `SELECT 1 FROM students WHERE name=$1 AND number=$2;`,
+    [name, number]
+  );
+  return r.rowCount > 0;
+}
+
+async function findMySeat(name, number) {
+  const r = await pool.query(
+    `SELECT seat_code FROM seats WHERE student_name=$1 AND student_number=$2 LIMIT 1;`,
+    [name, number]
+  );
+  return r.rowCount ? r.rows[0].seat_code : null;
 }
 
 function notifyStateChanged() {
   io.emit("state-changed");
 }
 
-function hasAnyAssignedSeat(seats) {
-  return Object.values(seats).some((value) => value !== null);
-}
-
-function sanitizeStudents(inputStudents) {
-  if (!Array.isArray(inputStudents)) {
-    throw new Error("학생 목록 형식이 올바르지 않습니다.");
-  }
-
-  const cleaned = inputStudents.map((student) => ({
-    name: String(student.name || "").trim(),
-    number: String(student.number || "").trim()
-  }));
-
-  if (cleaned.some((student) => !student.name || !student.number)) {
-    throw new Error("이름과 학번은 모두 필요합니다.");
-  }
-
-  const usedNames = new Set();
-  const usedNumbers = new Set();
-
-  for (const student of cleaned) {
-    if (usedNames.has(student.name)) {
-      throw new Error("중복된 이름이 있습니다.");
-    }
-    if (usedNumbers.has(student.number)) {
-      throw new Error("중복된 학번이 있습니다.");
-    }
-
-    usedNames.add(student.name);
-    usedNumbers.add(student.number);
-  }
-
-  return cleaned;
-}
-
-function findStudentByCredentials(state, name, number) {
-  return state.students.find(
-    (student) => student.name === name && student.number === number
-  );
-}
-
-function findStudentSeat(state, name, number) {
-  for (const [seatCode, occupant] of Object.entries(state.seats)) {
-    if (
-      occupant &&
-      occupant.name === name &&
-      occupant.number === number
-    ) {
-      return seatCode;
-    }
-  }
-  return null;
-}
-
-function getPublicStudents(state) {
-  return state.students.map((student) => ({
-    name: student.name
-  }));
-}
-
-function getPublicState(state) {
-  return {
-    status: state.status,
-    seats: state.seats
-  };
-}
-
+// -----------------------
+// Express 기본 설정
+// -----------------------
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 
+app.get("/", (req, res) => res.redirect("/teacher"));
+app.get("/teacher", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "teacher.html")));
+app.get("/student", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "student.html")));
+
+// ✅ healthz: DB까지 확인
 app.get("/healthz", async (req, res) => {
   try {
     await pool.query("SELECT 1");
     res.status(200).json({ ok: true, db: "ok" });
-  } catch(e) {
-    res.status(500).json({ ok: true, db: "fail" });
+  } catch (e) {
+    res.status(500).json({ ok: false, db: "fail", error: e.message });
   }
 });
 
-app.get('/test', (req, res) => {
-  res.send('서버 괜찮');
-});
-
-app.get("/", (req, res) => {
-  res.redirect("/teacher");
-});
-
-app.get("/teacher", (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, "teacher.html"));
-});
-
-app.get("/student", (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, "student.html"));
-});
-
-/* ---------------------------
-   Teacher API
---------------------------- */
-
-app.get("/api/teacher/state", (req, res) => {
-  const state = readState();
-  res.json(state);
-});
-
-app.post("/api/teacher/students", (req, res) => {
+// -----------------------
+// Teacher API
+// -----------------------
+app.get("/api/teacher/state", async (req, res) => {
   try {
-    const state = readState();
+    const [status, students, seats] = await Promise.all([
+      getStatus(),
+      getStudentsAll(),
+      getSeatsMap()
+    ]);
+    res.json({ status, students, seats });
+  } catch (e) {
+    res.status(500).json({ message: "teacher state load failed" });
+  }
+});
 
-    if (state.status !== "waiting" || hasAnyAssignedSeat(state.seats)) {
-      return res.status(400).json({
-        message: "학생 정보는 자리 배정 시작 전에만 저장할 수 있습니다."
-      });
+// 학생 저장 (waiting + 좌석 비어있을 때만)
+app.post("/api/teacher/students", async (req, res) => {
+  const input = req.body.students;
+
+  try {
+    if (!Array.isArray(input)) {
+      return res.status(400).json({ message: "학생 목록 형식이 올바르지 않습니다." });
     }
 
-    const students = sanitizeStudents(req.body.students);
-    state.students = students;
-    writeState(state);
+    const cleaned = input.map((s) => ({
+      name: String(s.name || "").trim(),
+      number: String(s.number || "").trim()
+    }));
+
+    if (cleaned.some((s) => !s.name || !s.number)) {
+      return res.status(400).json({ message: "이름과 학번은 모두 필요합니다." });
+    }
+
+    // 중복 체크
+    const nameSet = new Set();
+    const numSet = new Set();
+    for (const s of cleaned) {
+      if (nameSet.has(s.name)) return res.status(400).json({ message: "중복된 이름이 있습니다." });
+      if (numSet.has(s.number)) return res.status(400).json({ message: "중복된 학번이 있습니다." });
+      nameSet.add(s.name);
+      numSet.add(s.number);
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const st = await client.query(`SELECT status FROM app_state WHERE id=1 FOR UPDATE;`);
+      const status = st.rows[0]?.status || "waiting";
+
+      const taken = await client.query(`SELECT COUNT(*)::int AS cnt FROM seats WHERE student_name IS NOT NULL;`);
+      const takenCnt = taken.rows[0].cnt;
+
+      if (status !== "waiting" || takenCnt > 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "학생 정보는 자리 배정 시작 전에만 저장할 수 있습니다." });
+      }
+
+      // 가장 단순: 전체 교체
+      await client.query(`TRUNCATE TABLE students;`);
+      for (const s of cleaned) {
+        await client.query(`INSERT INTO students (name, number) VALUES ($1, $2);`, [s.name, s.number]);
+      }
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+
     notifyStateChanged();
-
-    res.json({
-      message: "학생 정보가 저장되었습니다.",
-      students: state.students
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: error.message || "학생 정보 저장에 실패했습니다."
-    });
+    res.json({ message: "학생 정보가 저장되었습니다." });
+  } catch (e) {
+    res.status(400).json({ message: e.message || "학생 정보 저장 실패" });
   }
 });
 
-app.post("/api/teacher/start", (req, res) => {
-  const state = readState();
-
-  if (state.students.length === 0) {
-    return res.status(400).json({
-      message: "먼저 학생 정보를 저장해 주세요."
-    });
+app.post("/api/teacher/start", async (req, res) => {
+  try {
+    const students = await getStudentsAll();
+    if (students.length === 0) {
+      return res.status(400).json({ message: "먼저 학생 정보를 저장해 주세요." });
+    }
+    await setStatus("open");
+    notifyStateChanged();
+    res.json({ message: "자리 선택이 시작되었습니다.", status: "open" });
+  } catch (e) {
+    res.status(500).json({ message: "시작 처리 실패" });
   }
-
-  state.status = "open";
-  writeState(state);
-  notifyStateChanged();
-
-  res.json({
-    message: "자리 선택이 시작되었습니다.",
-    status: state.status
-  });
 });
 
-app.post("/api/teacher/finish", (req, res) => {
-  const state = readState();
-  state.status = "closed";
-  writeState(state);
-  notifyStateChanged();
-
-  res.json({
-    message: "자리 배정이 완료되었습니다.",
-    status: state.status
-  });
+app.post("/api/teacher/finish", async (req, res) => {
+  try {
+    await setStatus("closed");
+    notifyStateChanged();
+    res.json({ message: "자리 배정이 완료되었습니다.", status: "closed" });
+  } catch (e) {
+    res.status(500).json({ message: "완료 처리 실패" });
+  }
 });
 
-app.post("/api/teacher/reset", (req, res) => {
-  const state = readState();
-  state.status = "waiting";
-  state.seats = createSeatMap();
-  writeState(state);
-  notifyStateChanged();
+app.post("/api/teacher/reset", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`UPDATE app_state SET status='waiting' WHERE id=1;`);
+      await client.query(`UPDATE seats SET student_name=NULL, student_number=NULL;`);
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
 
-  res.json({
-    message: "좌석 배정이 초기화되었습니다.",
-    status: state.status,
-    seats: state.seats
-  });
+    notifyStateChanged();
+    res.json({ message: "좌석 배정이 초기화되었습니다.", status: "waiting" });
+  } catch (e) {
+    res.status(500).json({ message: "초기화 실패" });
+  }
 });
 
-/* ---------------------------
-   Public / Student API
---------------------------- */
-
-app.get("/api/public/state", (req, res) => {
-  const state = readState();
-  res.json(getPublicState(state));
+// -----------------------
+// Public / Student API
+// -----------------------
+app.get("/api/public/state", async (req, res) => {
+  try {
+    const [status, seats] = await Promise.all([getStatus(), getSeatsMap()]);
+    res.json({ status, seats });
+  } catch (e) {
+    res.status(500).json({ message: "상태 조회 실패" });
+  }
 });
 
-app.get("/api/public/students", (req, res) => {
-  const state = readState();
-  res.json(getPublicStudents(state));
+app.get("/api/public/students", async (req, res) => {
+  try {
+    res.json(await getStudentsPublic());
+  } catch (e) {
+    res.status(500).json({ message: "학생 목록 조회 실패" });
+  }
 });
 
-app.post("/api/student/login", (req, res) => {
-  const state = readState();
+app.post("/api/student/login", async (req, res) => {
   const name = String(req.body.name || "").trim();
   const number = String(req.body.number || "").trim();
 
   if (!name || !number) {
-    return res.status(400).json({
-      message: "이름과 학번을 모두 입력해 주세요."
-    });
+    return res.status(400).json({ message: "이름과 학번을 모두 입력해 주세요." });
   }
 
-  const matchedStudent = findStudentByCredentials(state, name, number);
-
-  if (!matchedStudent) {
-    return res.status(401).json({
-      message: "이름 또는 학번이 일치하지 않습니다."
-    });
-  }
-
-  res.json({
-    message: "본인 확인이 완료되었습니다.",
-    student: {
-      name: matchedStudent.name,
-      number: matchedStudent.number
+  try {
+    const ok = await findStudent(name, number);
+    if (!ok) {
+      return res.status(401).json({ message: "이름 또는 학번이 일치하지 않습니다." });
     }
-  });
+    res.json({ message: "본인 확인이 완료되었습니다.", student: { name, number } });
+  } catch (e) {
+    res.status(500).json({ message: "로그인 처리 실패" });
+  }
 });
 
-app.post("/api/student/select-seat", (req, res) => {
-  const state = readState();
+// 선착순 자리 선택 (트랜잭션 + row lock)
+app.post("/api/student/select-seat", async (req, res) => {
   const name = String(req.body.name || "").trim();
   const number = String(req.body.number || "").trim();
   const seatCode = String(req.body.seatCode || "").trim();
 
   if (!name || !number || !seatCode) {
-    return res.status(400).json({
-      code: "INVALID_REQUEST",
-      message: "필수 정보가 누락되었습니다."
-    });
+    return res.status(400).json({ code: "INVALID_REQUEST", message: "필수 정보가 누락되었습니다." });
   }
 
-  const matchedStudent = findStudentByCredentials(state, name, number);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (!matchedStudent) {
-    return res.status(401).json({
-      code: "INVALID_STUDENT",
-      message: "학생 확인에 실패했습니다."
-    });
+    // 상태 lock
+    const st = await client.query(`SELECT status FROM app_state WHERE id=1 FOR UPDATE;`);
+    const status = st.rows[0]?.status || "waiting";
+    if (status !== "open") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NOT_OPEN", message: "현재는 자리 선택 시간이 아닙니다." });
+    }
+
+    // 학생 확인
+    const sr = await client.query(`SELECT 1 FROM students WHERE name=$1 AND number=$2;`, [name, number]);
+    if (sr.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(401).json({ code: "INVALID_STUDENT", message: "학생 확인에 실패했습니다." });
+    }
+
+    // 내 자리 이미 있는지
+    const my = await client.query(
+      `SELECT seat_code FROM seats WHERE student_name=$1 AND student_number=$2 LIMIT 1;`,
+      [name, number]
+    );
+    if (my.rowCount > 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        code: "ALREADY_ASSIGNED",
+        message: "이미 자리가 배정되었습니다.",
+        seatCode: my.rows[0].seat_code
+      });
+    }
+
+    // 좌석 row lock
+    const seat = await client.query(`SELECT student_name FROM seats WHERE seat_code=$1 FOR UPDATE;`, [seatCode]);
+    if (seat.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ code: "INVALID_SEAT", message: "존재하지 않는 자리입니다." });
+    }
+    if (seat.rows[0].student_name) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "SEAT_TAKEN", message: "이미 선택된 자리입니다." });
+    }
+
+    await client.query(
+      `UPDATE seats SET student_name=$1, student_number=$2 WHERE seat_code=$3;`,
+      [name, number, seatCode]
+    );
+
+    await client.query("COMMIT");
+    notifyStateChanged();
+    res.json({ message: "자리가 배정되었습니다.", seatCode });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ message: "자리 선택 실패" });
+  } finally {
+    client.release();
   }
-
-  if (state.status !== "open") {
-    return res.status(409).json({
-      code: "NOT_OPEN",
-      message: "현재는 자리 선택 시간이 아닙니다."
-    });
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(state.seats, seatCode)) {
-    return res.status(400).json({
-      code: "INVALID_SEAT",
-      message: "존재하지 않는 자리입니다."
-    });
-  }
-
-  const mySeat = findStudentSeat(state, name, number);
-  if (mySeat) {
-    return res.status(409).json({
-      code: "ALREADY_ASSIGNED",
-      message: "이미 자리가 배정되었습니다.",
-      seatCode: mySeat
-    });
-  }
-
-  if (state.seats[seatCode] !== null) {
-    return res.status(409).json({
-      code: "SEAT_TAKEN",
-      message: "이미 선택된 자리입니다."
-    });
-  }
-
-  state.seats[seatCode] = {
-    name: matchedStudent.name,
-    number: matchedStudent.number
-  };
-
-  writeState(state);
-  notifyStateChanged();
-
-  res.json({
-    message: "자리가 배정되었습니다.",
-    seatCode,
-    seats: state.seats
-  });
 });
 
-app.post("/api/student/cancel-seat", (req, res) => {
-  const state = readState();
+app.post("/api/student/cancel-seat", async (req, res) => {
   const name = String(req.body.name || "").trim();
   const number = String(req.body.number || "").trim();
 
   if (!name || !number) {
-    return res.status(400).json({
-      code: "INVALID_REQUEST",
-      message: "필수 정보가 누락되었습니다."
-    });
+    return res.status(400).json({ code: "INVALID_REQUEST", message: "필수 정보가 누락되었습니다." });
   }
 
-  const matchedStudent = findStudentByCredentials(state, name, number);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (!matchedStudent) {
-    return res.status(401).json({
-      code: "INVALID_STUDENT",
-      message: "학생 확인에 실패했습니다."
-    });
+    const st = await client.query(`SELECT status FROM app_state WHERE id=1 FOR UPDATE;`);
+    const status = st.rows[0]?.status || "waiting";
+    if (status !== "open") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NOT_OPEN", message: "현재는 자리 변경이 가능한 시간이 아닙니다." });
+    }
+
+    // 학생 확인
+    const sr = await client.query(`SELECT 1 FROM students WHERE name=$1 AND number=$2;`, [name, number]);
+    if (sr.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(401).json({ code: "INVALID_STUDENT", message: "학생 확인에 실패했습니다." });
+    }
+
+    const my = await client.query(
+      `SELECT seat_code FROM seats WHERE student_name=$1 AND student_number=$2 FOR UPDATE;`,
+      [name, number]
+    );
+
+    if (my.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ code: "NO_ASSIGNED_SEAT", message: "현재 배정된 자리가 없습니다." });
+    }
+
+    await client.query(
+      `UPDATE seats SET student_name=NULL, student_number=NULL WHERE seat_code=$1;`,
+      [my.rows[0].seat_code]
+    );
+
+    await client.query("COMMIT");
+    notifyStateChanged();
+    res.json({ message: "자리 배정이 취소되었습니다.", seatCode: my.rows[0].seat_code });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ message: "자리 취소 실패" });
+  } finally {
+    client.release();
   }
-
-  if (state.status !== "open") {
-    return res.status(409).json({
-      code: "NOT_OPEN",
-      message: "현재는 자리 변경이 가능한 시간이 아닙니다."
-    });
-  }
-
-  const mySeat = findStudentSeat(state, name, number);
-
-  if (!mySeat) {
-    return res.status(409).json({
-      code: "NO_ASSIGNED_SEAT",
-      message: "현재 배정된 자리가 없습니다."
-    });
-  }
-
-  state.seats[mySeat] = null;
-  writeState(state);
-  notifyStateChanged();
-
-  res.json({
-    message: "자리 배정이 취소되었습니다.",
-    seatCode: mySeat,
-    seats: state.seats
-  });
 });
 
+// -----------------------
+// Socket.IO
+// -----------------------
 io.on("connection", (socket) => {
   console.log("socket connected:", socket.id);
-
-  socket.on("disconnect", () => {
-    console.log("socket disconnected:", socket.id);
-  });
+  socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
 });
 
-ensureStateFile();
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// -----------------------
+// 서버 시작
+// -----------------------
+(async () => {
+  try {
+    console.log("[BOOT] starting...");
+    console.log("[BOOT] DATABASE_URL exists?", !!process.env.DATABASE_URL);
+    await initDb();
+    console.log("[BOOT] db init done");
+    server.listen(PORT, () => console.log(`[BOOT] listening on ${PORT}`));
+  } catch (e) {
+    console.error("[BOOT] failed:", e);
+    process.exit(1);
+  }
+})();
