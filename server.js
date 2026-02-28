@@ -150,8 +150,13 @@ function getPublicState(state) {
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 
-app.get("/healthz", (req, res) => {
-  res.status(200).json({ ok: true });
+app.get("/healthz", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({ ok: true, db: "ok" });
+  } catch(e) {
+    res.status(500).json({ ok: true, db: "fail" });
+  }
 });
 
 app.get("/", (req, res) => {
