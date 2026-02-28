@@ -159,6 +159,10 @@ app.get("/healthz", async (req, res) => {
   }
 });
 
+app.get('/test', (req, res) => {
+  res.send('서버 괜찮');
+});
+
 app.get("/", (req, res) => {
   res.redirect("/teacher");
 });
