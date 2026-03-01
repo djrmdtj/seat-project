@@ -285,7 +285,23 @@ loginBtn.addEventListener("click", async () => {
   }
 });
 
-logoutBtn.addEventListener("click", () => {
+logoutBtn.addEventListener("click", async () => {
+  const currentStudent = getCurrentStudent();
+
+  if (currentStudent) {
+    try {
+      await fetch("/api/student/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: currentStudent.name,
+          number: currentStudent.number
+        })
+      });
+    } catch (e) {
+    }
+  }
+
   clearCurrentStudent();
   studentNumberInput.value = "";
   renderAll();
