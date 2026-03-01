@@ -303,7 +303,7 @@ app.post("/api/student/login", async (req, res) => {
       return res.status(401).json({ message: "이름 또는 학번이 일치하지 않습니다." });
     }
 
-    const TTL_SECONDS = 120;
+    const TTL_SECONDS = 60;
 
     const client = await pool.connect();
     try {

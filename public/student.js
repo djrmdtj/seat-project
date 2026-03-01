@@ -241,6 +241,29 @@ async function refreshStudentData() {
   }
 }
 
+function autoLogoutOnLeave() {
+  const currentStudent = getCurrentStudent();
+  if (!currentStudent) return;
+
+  const payload = JSON.stringify({ number: currentStudent.number });
+
+  if (navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: "application/json" });
+    navigator.sendBeacon("/api/student/logout", blob);
+    return;
+  }
+
+  try {
+    fetch("/api/student/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true
+    });
+  } catch (e) {
+  }
+}
+
 loginBtn.addEventListener("click", async () => {
   const selectedName = studentSelect.value;
   const inputNumber = studentNumberInput.value.trim();
@@ -389,3 +412,12 @@ socket.on("connect", async () => {
 });
 
 refreshStudentData();
+
+window.addEventListener("pagehide", autoLogoutOnLeave);
+window.addEventListener("beforeunload", autoLogoutOnLeave);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    autoLogoutOnLeave();
+  }
+});
