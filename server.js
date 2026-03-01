@@ -61,6 +61,14 @@ async function initDb() {
     ON CONFLICT (id) DO NOTHING;
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS active_logins (
+      number TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      last_seen TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
   const seatCodes = createSeatCodes();
   for (const code of seatCodes) {
     await pool.query(
@@ -292,9 +300,73 @@ app.post("/api/student/login", async (req, res) => {
     if (!ok) {
       return res.status(401).json({ message: "이름 또는 학번이 일치하지 않습니다." });
     }
+
+    const TTL_SECONDS = 120;
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const r = await client.query(
+        `SELECT number, last_seen FROM active_logins WHERE number=$1 FOR UPDATE;`,
+        [number]
+      );
+
+      if (r.rowCount > 0) {
+        const expiredRes = await client.query(
+          `SELECT (NOW() - $1) > ($2 || ' seconds')::interval AS expired;`,
+          [r.rows[0].last_seen, TTL_SECONDS]
+        );
+        const expired = !!expiredRes.rows[0].expired;
+
+        if (!expired) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            message: "이미 로그인된 학생입니다. 다시 이름을 선택해 주세요."
+          });
+        }
+
+        await client.query(
+          `UPDATE active_logins SET name=$2, last_seen=NOW() WHERE number=$1;`,
+          [number, name]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO active_logins (number, name, last_seen) VALUES ($1, $2, NOW());`,
+          [number, name]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+
     res.json({ message: "본인 확인이 완료되었습니다.", student: { name, number } });
   } catch (e) {
     res.status(500).json({ message: "로그인 처리 실패" });
+  }
+});
+
+app.post("/api/student/logout", async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const number = String(req.body.number || "").trim();
+
+  if (!name || !number) {
+    return res.status(400).json({ message: "필수 정보가 누락되었습니다." });
+  }
+
+  try {
+    await pool.query(
+      `DELETE FROM active_logins WHERE number=$1 AND name=$2;`,
+      [number, name]
+    );
+    res.json({ message: "로그아웃 되었습니다." });
+  } catch (e) {
+    res.status(500).json({ message: "로그아웃 실패" });
   }
 });
 
