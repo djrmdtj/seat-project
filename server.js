@@ -205,6 +205,7 @@ app.post("/api/teacher/students", async (req, res) => {
       }
 
       await client.query(`TRUNCATE TABLE students;`);
+      await client.query(`TRUNCATE TABLE active_logins;`);
       for (const s of cleaned) {
         await client.query(`INSERT INTO students (name, number) VALUES ($1, $2);`, [s.name, s.number]);
       }
@@ -255,6 +256,7 @@ app.post("/api/teacher/reset", async (req, res) => {
       await client.query("BEGIN");
       await client.query(`UPDATE app_state SET status='waiting' WHERE id=1;`);
       await client.query(`UPDATE seats SET student_name=NULL, student_number=NULL;`);
+      await client.query(`TRUNCATE TABLE active_logins;`);
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
@@ -352,18 +354,14 @@ app.post("/api/student/login", async (req, res) => {
 });
 
 app.post("/api/student/logout", async (req, res) => {
-  const name = String(req.body.name || "").trim();
   const number = String(req.body.number || "").trim();
 
-  if (!name || !number) {
+  if (!number) {
     return res.status(400).json({ message: "필수 정보가 누락되었습니다." });
   }
 
   try {
-    await pool.query(
-      `DELETE FROM active_logins WHERE number=$1 AND name=$2;`,
-      [number, name]
-    );
+    await pool.query(`DELETE FROM active_logins WHERE number=$1;`, [number]);
     res.json({ message: "로그아웃 되었습니다." });
   } catch (e) {
     res.status(500).json({ message: "로그아웃 실패" });
