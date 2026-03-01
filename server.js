@@ -13,7 +13,6 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-// ✅ DB 연결 (Docker Postgres / Cloud 환경 공통)
 if (!process.env.DATABASE_URL) {
   console.error("[BOOT] DATABASE_URL is missing");
   process.exit(1);
@@ -21,13 +20,8 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
-  // 필요 시 SSL 옵션 추가 가능 (클라우드 DB일 때)
-  // ssl: { rejectUnauthorized: false }
 });
 
-// -----------------------
-// 좌석 생성 (5열 x 6행)
-// -----------------------
 function createSeatCodes() {
   const codes = [];
   const columns = ["A", "B", "C", "D", "E"];
@@ -38,11 +32,7 @@ function createSeatCodes() {
   return codes;
 }
 
-// -----------------------
-// DB 초기화 (테이블 생성 + 기본 데이터)
-// -----------------------
 async function initDb() {
-  // 상태 테이블
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_state (
       id INTEGER PRIMARY KEY,
@@ -50,7 +40,6 @@ async function initDb() {
     );
   `);
 
-  // 학생 테이블
   await pool.query(`
     CREATE TABLE IF NOT EXISTS students (
       name TEXT PRIMARY KEY,
@@ -58,7 +47,6 @@ async function initDb() {
     );
   `);
 
-  // 좌석 테이블
   await pool.query(`
     CREATE TABLE IF NOT EXISTS seats (
       seat_code TEXT PRIMARY KEY,
@@ -67,14 +55,12 @@ async function initDb() {
     );
   `);
 
-  // app_state 기본값
   await pool.query(`
     INSERT INTO app_state (id, status)
     VALUES (1, 'waiting')
     ON CONFLICT (id) DO NOTHING;
   `);
 
-  // seats 기본 30개 보장
   const seatCodes = createSeatCodes();
   for (const code of seatCodes) {
     await pool.query(
@@ -88,9 +74,6 @@ async function initDb() {
   }
 }
 
-// -----------------------
-// 공통 조회 함수
-// -----------------------
 async function getStatus() {
   const r = await pool.query(`SELECT status FROM app_state WHERE id=1;`);
   return r.rows[0]?.status || "waiting";
@@ -143,9 +126,6 @@ function notifyStateChanged() {
   io.emit("state-changed");
 }
 
-// -----------------------
-// Express 기본 설정
-// -----------------------
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 
@@ -153,7 +133,6 @@ app.get("/", (req, res) => res.redirect("/teacher"));
 app.get("/teacher", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "teacher.html")));
 app.get("/student", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "student.html")));
 
-// ✅ healthz: DB까지 확인
 app.get("/healthz", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -163,9 +142,6 @@ app.get("/healthz", async (req, res) => {
   }
 });
 
-// -----------------------
-// Teacher API
-// -----------------------
 app.get("/api/teacher/state", async (req, res) => {
   try {
     const [status, students, seats] = await Promise.all([
@@ -179,7 +155,6 @@ app.get("/api/teacher/state", async (req, res) => {
   }
 });
 
-// 학생 저장 (waiting + 좌석 비어있을 때만)
 app.post("/api/teacher/students", async (req, res) => {
   const input = req.body.students;
 
@@ -197,7 +172,6 @@ app.post("/api/teacher/students", async (req, res) => {
       return res.status(400).json({ message: "이름과 학번은 모두 필요합니다." });
     }
 
-    // 중복 체크
     const nameSet = new Set();
     const numSet = new Set();
     for (const s of cleaned) {
@@ -222,7 +196,6 @@ app.post("/api/teacher/students", async (req, res) => {
         return res.status(400).json({ message: "학생 정보는 자리 배정 시작 전에만 저장할 수 있습니다." });
       }
 
-      // 가장 단순: 전체 교체
       await client.query(`TRUNCATE TABLE students;`);
       for (const s of cleaned) {
         await client.query(`INSERT INTO students (name, number) VALUES ($1, $2);`, [s.name, s.number]);
@@ -289,9 +262,6 @@ app.post("/api/teacher/reset", async (req, res) => {
   }
 });
 
-// -----------------------
-// Public / Student API
-// -----------------------
 app.get("/api/public/state", async (req, res) => {
   try {
     const [status, seats] = await Promise.all([getStatus(), getSeatsMap()]);
@@ -328,7 +298,6 @@ app.post("/api/student/login", async (req, res) => {
   }
 });
 
-// 선착순 자리 선택 (트랜잭션 + row lock)
 app.post("/api/student/select-seat", async (req, res) => {
   const name = String(req.body.name || "").trim();
   const number = String(req.body.number || "").trim();
@@ -342,7 +311,6 @@ app.post("/api/student/select-seat", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 상태 lock
     const st = await client.query(`SELECT status FROM app_state WHERE id=1 FOR UPDATE;`);
     const status = st.rows[0]?.status || "waiting";
     if (status !== "open") {
@@ -350,14 +318,12 @@ app.post("/api/student/select-seat", async (req, res) => {
       return res.status(409).json({ code: "NOT_OPEN", message: "현재는 자리 선택 시간이 아닙니다." });
     }
 
-    // 학생 확인
     const sr = await client.query(`SELECT 1 FROM students WHERE name=$1 AND number=$2;`, [name, number]);
     if (sr.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(401).json({ code: "INVALID_STUDENT", message: "학생 확인에 실패했습니다." });
     }
 
-    // 내 자리 이미 있는지
     const my = await client.query(
       `SELECT seat_code FROM seats WHERE student_name=$1 AND student_number=$2 LIMIT 1;`,
       [name, number]
@@ -371,7 +337,6 @@ app.post("/api/student/select-seat", async (req, res) => {
       });
     }
 
-    // 좌석 row lock
     const seat = await client.query(`SELECT student_name FROM seats WHERE seat_code=$1 FOR UPDATE;`, [seatCode]);
     if (seat.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -417,7 +382,6 @@ app.post("/api/student/cancel-seat", async (req, res) => {
       return res.status(409).json({ code: "NOT_OPEN", message: "현재는 자리 변경이 가능한 시간이 아닙니다." });
     }
 
-    // 학생 확인
     const sr = await client.query(`SELECT 1 FROM students WHERE name=$1 AND number=$2;`, [name, number]);
     if (sr.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -450,17 +414,11 @@ app.post("/api/student/cancel-seat", async (req, res) => {
   }
 });
 
-// -----------------------
-// Socket.IO
-// -----------------------
 io.on("connection", (socket) => {
   console.log("socket connected:", socket.id);
   socket.on("disconnect", () => console.log("socket disconnected:", socket.id));
 });
 
-// -----------------------
-// 서버 시작
-// -----------------------
 (async () => {
   try {
     console.log("[BOOT] starting...");

@@ -265,6 +265,14 @@ loginBtn.addEventListener("click", async () => {
     const data = await response.json();
 
     if (!response.ok) {
+      if (response.status === 409) {
+        alert("이미 로그인된 학생입니다. 다시 이름을 선택해 주세요.");
+        studentSelect.value = "";
+        studentNumberInput.value = "";
+        renderAll();
+        return;
+      }
+
       alert(data.message || "본인 확인에 실패했습니다.");
       return;
     }
