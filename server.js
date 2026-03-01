@@ -26,7 +26,7 @@ function createSeatCodes() {
   const codes = [];
   const row = ["A", "B", "C", "D", "E", "F"];
   const columns = 5;
-  for (let c = 1; r <= columns; r += 1) {
+  for (let c = 1; c <= columns; c += 1) {
     for (const r of row) codes.push(`${r}${c}`);
   }
   return codes;
