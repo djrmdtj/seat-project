@@ -142,47 +142,55 @@ function renderSeats() {
 
   studentSeatGrid.innerHTML = "";
 
-  Object.entries(publicState.seats).forEach(([seatCode, occupant]) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "seat-btn";
-    button.dataset.seatCode = seatCode;
+  const rows = ["A", "B", "C", "D", "E", "F"];
+  const columns = 5;
 
-    const isMine =
-      occupant &&
-      currentStudent &&
-      occupant.name === currentStudent.name &&
-      occupant.number === currentStudent.number;
+  for (const row of rows) {
+    for (let col = 1; col <= columns; col += 1) {
+      const seatCode = `${row}${col}`;
+      const occupant = publicState.seats[seatCode];
 
-    if (occupant) {
-      button.classList.add(isMine ? "mine" : "taken");
-      button.disabled = true;
-      button.innerHTML = `
-        <span class="seat-code">${seatCode}</span>
-        <span class="seat-name">${occupant.name}</span>
-      `;
-    } else {
-      const canSelect =
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "seat-btn";
+      button.dataset.seatCode = seatCode;
+
+      const isMine =
+        occupant &&
         currentStudent &&
-        publicState.status === "open" &&
-        !mySeat;
+        occupant.name === currentStudent.name &&
+        occupant.number === currentStudent.number;
 
-      button.classList.add(canSelect ? "available" : "locked");
-      button.disabled = !canSelect;
-      button.innerHTML = `
-        <span class="seat-code">${seatCode}</span>
-        <span class="empty-text">선택 가능</span>
-      `;
+      if (occupant) {
+        button.classList.add(isMine ? "mine" : "taken");
+        button.disabled = true;
+        button.innerHTML = `
+          <span class="seat-code">${seatCode}</span>
+          <span class="seat-name">${occupant.name}</span>
+        `;
+      } else {
+        const canSelect =
+          currentStudent &&
+          publicState.status === "open" &&
+          !mySeat;
 
-      if (canSelect) {
-        button.addEventListener("click", () => {
-          selectSeat(seatCode);
-        });
+        button.classList.add(canSelect ? "available" : "locked");
+        button.disabled = !canSelect;
+        button.innerHTML = `
+          <span class="seat-code">${seatCode}</span>
+          <span class="empty-text">선택 가능</span>
+        `;
+
+        if (canSelect) {
+          button.addEventListener("click", () => {
+            selectSeat(seatCode);
+          });
+        }
       }
-    }
 
-    studentSeatGrid.appendChild(button);
-  });
+      studentSeatGrid.appendChild(button);
+    }
+  }
 }
 
 function renderResults() {
@@ -196,9 +204,19 @@ function renderResults() {
     return;
   }
 
-  const assignedSeats = Object.entries(publicState.seats).filter(
-    ([, occupant]) => occupant !== null
-  );
+  const rows = ["A", "B", "C", "D", "E", "F"];
+  const columns = 5;
+  const orderedSeatCodes = [];
+
+  for (const row of rows) {
+    for (let col = 1; col <= columns; col += 1) {
+      orderedSeatCodes.push(`${row}${col}`);
+    }
+  }
+
+  const assignedSeats = orderedSeatCodes
+    .map((seatCode) => [seatCode, publicState.seats[seatCode]])
+    .filter(([, occupant]) => occupant !== null && occupant !== undefined);
 
   if (assignedSeats.length === 0) {
     const li = document.createElement("li");

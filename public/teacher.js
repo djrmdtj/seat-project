@@ -78,28 +78,36 @@ function renderStatus() {
 function renderSeats() {
   teacherSeatGrid.innerHTML = "";
 
-  Object.entries(serverState.seats).forEach(([seatCode, occupant]) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "seat-btn";
-    button.disabled = true;
+  const rows = ["A", "B", "C", "D", "E", "F"];
+  const columns = 5;
 
-    if (occupant) {
-      button.classList.add("taken");
-      button.innerHTML = `
-        <span class="seat-code">${seatCode}</span>
-        <span class="seat-name">${occupant.name}</span>
-      `;
-    } else {
-      button.classList.add("locked");
-      button.innerHTML = `
-        <span class="seat-code">${seatCode}</span>
-        <span class="empty-text">빈자리</span>
-      `;
+  for (const row of rows) {
+    for (let col = 1; col <= columns; col += 1) {
+      const seatCode = `${row}${col}`;
+      const occupant = serverState.seats[seatCode];
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "seat-btn";
+      button.disabled = true;
+
+      if (occupant) {
+        button.classList.add("taken");
+        button.innerHTML = `
+          <span class="seat-code">${seatCode}</span>
+          <span class="seat-name">${occupant.name}</span>
+        `;
+      } else {
+        button.classList.add("locked");
+        button.innerHTML = `
+          <span class="seat-code">${seatCode}</span>
+          <span class="empty-text">빈자리</span>
+        `;
+      }
+
+      teacherSeatGrid.appendChild(button);
     }
-
-    teacherSeatGrid.appendChild(button);
-  });
+  }
 }
 
 function renderResults() {
