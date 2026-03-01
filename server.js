@@ -24,8 +24,8 @@ const pool = new Pool({
 
 function createSeatCodes() {
   const codes = [];
-  const columns = ["A", "B", "C", "D", "E"];
-  const rows = 6;
+  const columns = ["A", "B", "C", "D", "E", "F"];
+  const rows = 5;
   for (let r = 1; r <= rows; r += 1) {
     for (const c of columns) codes.push(`${c}${r}`);
   }
