@@ -24,10 +24,10 @@ const pool = new Pool({
 
 function createSeatCodes() {
   const codes = [];
-  const columns = ["A", "B", "C", "D", "E", "F"];
-  const rows = 5;
-  for (let r = 1; r <= rows; r += 1) {
-    for (const c of columns) codes.push(`${c}${r}`);
+  const row = ["A", "B", "C", "D", "E", "F"];
+  const columns = 5;
+  for (let c = 1; r <= columns; r += 1) {
+    for (const r of row) codes.push(`${r}${c}`);
   }
   return codes;
 }
